@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-marketplace.json",
+  "name": "webiq-tools",
+  "description": "Web search tools backed by Microsoft Web IQ",
+  "owner": {
+    "name": "claude-webiq-search contributors"
+  },
+  "plugins": [
+    {
+      "name": "claude-webiq-search",
+      "source": "./",
+      "description": "Lightweight Microsoft Web IQ search for Claude Code"
+    }
+  ]
+}
