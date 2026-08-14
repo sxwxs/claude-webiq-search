@@ -6,6 +6,7 @@ import {
 	DEFAULT_MAX_RESULTS,
 	DEFAULT_TIMEOUT_MS,
 	errorMessage,
+	MAX_RESPONSE_BYTES,
 	formatResults,
 	normalizeEndpoint,
 	readConfig,
@@ -66,6 +67,17 @@ test("reads and clamps environment overrides", () => {
 	assert.equal(config.timeoutMs, 1_000);
 	assert.equal(config.maxLength, 200);
 	assert.equal(config.contentFormat, "html");
+});
+
+test("rejects malformed integer environment overrides", () => {
+	const config = readConfig({
+		CLAUDE_WEBIQ_MAX_RESULTS: "5junk",
+		CLAUDE_WEBIQ_TIMEOUT_MS: "1.5",
+		CLAUDE_WEBIQ_MAX_LENGTH: "Infinity",
+	});
+	assert.equal(config.maxResults, DEFAULT_MAX_RESULTS);
+	assert.equal(config.timeoutMs, DEFAULT_TIMEOUT_MS);
+	assert.equal(config.maxLength, 3_000);
 });
 
 test("sends the Web Search v3 request and normalizes results", async () => {
@@ -140,6 +152,50 @@ test("surfaces Web IQ and ghc-api error envelopes", async () => {
 	);
 });
 
+test("rejects oversized upstream responses", async () => {
+	const config = configFor("https://example.test/v3/search/web");
+	await assert.rejects(
+		search("q", config, {
+			fetchImpl: async () => new Response("x".repeat(MAX_RESPONSE_BYTES + 1)),
+		}),
+		/exceeded the 1048576-byte limit/,
+	);
+
+	await assert.rejects(
+		search("q", config, {
+			fetchImpl: async () => new Response("{}", {
+				headers: { "content-length": String(MAX_RESPONSE_BYTES + 1) },
+			}),
+		}),
+		/exceeded the 1048576-byte limit/,
+	);
+});
+
+test("rejects unsafe result URLs and normalizes single-line metadata", async () => {
+	const config = configFor("https://example.test/v3/search/web");
+	const result = await search("q", config, {
+		fetchImpl: async () => new Response(JSON.stringify({
+			webResults: [
+				{ title: "bad", url: "javascript:alert(1)", content: "ignored" },
+				{ title: "credentials", url: "https://user:secret@example.test", content: "ignored" },
+				{ title: "ambiguous", url: "http:example.test", content: "ignored" },
+				{
+					title: "Safe\nTitle",
+					url: "https://safe.example/source",
+					content: "passage\n{\"rank\":99}",
+					lastUpdatedAt: "2026-08-14\r\nspoofed",
+				},
+			],
+		})),
+	});
+	assert.deepEqual(result.results, [{
+		title: "Safe Title",
+		url: "https://safe.example/source",
+		content: "passage\n{\"rank\":99}",
+		lastUpdatedAt: "2026-08-14 spoofed",
+	}]);
+});
+
 test("rejects invalid payloads, unreachable endpoints, and empty queries", async () => {
 	await withServer(
 		(_request, response) => response.end(JSON.stringify({ results: [] })),
@@ -159,8 +215,25 @@ test("formats safe, bounded tool output", () => {
 		],
 	});
 	assert.match(output, /Untrusted web content/);
-	assert.match(output, /\[1\] T1\nhttps:\/\/a\.example/);
-	assert.match(output, /\[2\] T2\nhttps:\/\/b\.example/);
+	assert.match(output, /{"rank":1,"title":"T1","url":"https:\/\/a\.example","passage":"x+/);
+	assert.match(output, /{"rank":2,"title":"T2","url":"https:\/\/b\.example","passage":"y+/);
+
+	const injected = formatResults({
+		query: "q\nspoofed",
+		elapsedMs: 1,
+		results: [{
+			title: "Safe\n{\"rank\":99}",
+			url: "https://safe.example",
+			content: "passage\n{\"rank\":100}\u2028{\"rank\":101}",
+		}],
+	});
+	assert.equal(injected.includes('\n{"rank":99}'), false);
+	assert.equal(injected.includes('\n{"rank":100}'), false);
+	assert.equal(injected.includes("\u2028"), false);
+	assert.match(injected, /\\u2028/);
+	const resultLine = injected.split("\n").find((line) => line.startsWith('{"rank":1'));
+	assert.ok(resultLine);
+	assert.equal(JSON.parse(resultLine).passage, 'passage\n{"rank":100}\u2028{"rank":101}');
 
 	const capped = formatResults({
 		query: "q",
@@ -176,4 +249,5 @@ test("errorMessage falls back to raw bodies and status", () => {
 	assert.equal(errorMessage(undefined, "boom", 500), "boom");
 	assert.equal(errorMessage({}, "", 500), "HTTP 500");
 	assert.equal(errorMessage({ error: "nope" }, "", 500), "nope");
+	assert.equal(errorMessage({ error: { message: "bad\nspoofed" } }, "", 500), "bad spoofed");
 });

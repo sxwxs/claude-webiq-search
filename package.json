@@ -4,6 +4,13 @@
   "description": "Lightweight Microsoft Web IQ search plugin for Claude Code",
   "type": "module",
   "license": "MIT",
+  "author": "sxwxs",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sxwxs/claude-webiq-search.git"
+  },
+  "homepage": "https://github.com/sxwxs/claude-webiq-search#readme",
+  "bugs": "https://github.com/sxwxs/claude-webiq-search/issues",
   "keywords": [
     "claude-code-plugin",
     "mcp",
@@ -16,7 +23,8 @@
     ".mcp.json",
     "dist",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "THIRD_PARTY_LICENSES"
   ],
   "scripts": {
     "build": "tsc --noEmit && esbuild src/server.ts --bundle --platform=node --format=esm --target=node22 --outfile=dist/server.mjs",

@@ -3,7 +3,7 @@
   "name": "webiq-tools",
   "description": "Web search tools backed by Microsoft Web IQ",
   "owner": {
-    "name": "claude-webiq-search contributors"
+    "name": "sxwxs"
   },
   "plugins": [
     {

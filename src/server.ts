@@ -13,6 +13,7 @@ import {
 } from "./webiq-client.ts";
 
 export const TOOL_NAME = "webiq_search";
+export const SERVER_VERSION = "0.1.0";
 
 export const searchInputSchema = z
 	.object({
@@ -43,10 +44,19 @@ type SearchFunction = (
 	options?: SearchOptions,
 ) => Promise<WebIQResponse>;
 
+export interface SearchHandlerContext {
+	mcpReq?: {
+		signal?: AbortSignal;
+	};
+}
+
 export function createSearchHandler(config: WebIQConfig, searchImpl: SearchFunction = search) {
-	return async ({ query, max_results }: SearchToolInput) => {
+	return async ({ query, max_results }: SearchToolInput, context?: SearchHandlerContext) => {
 		try {
-			const response = await searchImpl(query, config, { maxResults: max_results });
+			const response = await searchImpl(query, config, {
+				maxResults: max_results,
+				signal: context?.mcpReq?.signal,
+			});
 			return {
 				content: [{ type: "text" as const, text: formatResults(response) }],
 			};
@@ -61,7 +71,7 @@ export function createSearchHandler(config: WebIQConfig, searchImpl: SearchFunct
 }
 
 export function createServer(config: WebIQConfig = readConfig()): McpServer {
-	const server = new McpServer({ name: "claude-webiq-search", version: "0.1.0" });
+	const server = new McpServer({ name: "claude-webiq-search", version: SERVER_VERSION });
 
 	server.registerTool(
 		TOOL_NAME,
